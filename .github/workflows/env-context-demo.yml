@@ -1,0 +1,38 @@
+name: Environment Context Demo
+
+on:
+  workflow_dispatch:
+
+env:
+  STAGE: test
+  DEMO_LEVEL: workflow
+  SHARED_VALUE: workflow-scope
+
+jobs:
+  show-contexts:
+    runs-on: ubuntu-latest
+    env:
+      DEMO_LEVEL: job
+      SHARED_VALUE: job-scope
+    steps:
+      - name: Show GitHub contexts
+        run: |
+          echo "github.actor=${{ github.actor }}"
+          echo "runner.os=${{ runner.os }}"
+          echo "STAGE=${STAGE}"
+          echo "DEMO_LEVEL=${DEMO_LEVEL}"
+          echo "SHARED_VALUE=${SHARED_VALUE}"
+
+      - name: Override env at step level
+        env:
+          DEMO_LEVEL: step
+          SHARED_VALUE: step-scope
+        run: |
+          echo "STAGE=${STAGE}"
+          echo "DEMO_LEVEL=${DEMO_LEVEL}"
+          echo "SHARED_VALUE=${SHARED_VALUE}"
+
+      - name: Show job-level value restored
+        run: |
+          echo "DEMO_LEVEL=${DEMO_LEVEL}"
+          echo "SHARED_VALUE=${SHARED_VALUE}"

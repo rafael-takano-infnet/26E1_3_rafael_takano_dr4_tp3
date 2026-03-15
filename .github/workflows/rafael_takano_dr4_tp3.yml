@@ -1,0 +1,138 @@
+name: DR4 TP3 Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  workflow_dispatch:
+    inputs:
+      run_issue_demo:
+        description: "Create an issue when REQUIRED_CONFIG is missing"
+        required: false
+        default: "false"
+      run_variable_demo:
+        description: "Run repository vars and secret demonstration"
+        required: false
+        default: "true"
+
+env:
+  REQUIRED_CONFIG: ${{ vars.REQUIRED_CONFIG }}
+
+jobs:
+  build-test-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Build application
+        run: mvn -B clean compile
+
+      - name: Run automated tests
+        run: mvn -B test
+
+      - name: Package application
+        run: mvn -B package
+
+  variables-and-secrets-demo:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_variable_demo == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show repository variables
+        run: |
+          echo "APP_MODE=${{ vars.APP_MODE }}"
+          echo "SUPPORT_EMAIL=${{ vars.SUPPORT_EMAIL }}"
+
+      - name: Simulate protected action with secret
+        env:
+          PROD_TOKEN: ${{ secrets.PROD_TOKEN }}
+        run: |
+          if [ -z "${PROD_TOKEN}" ]; then
+            echo "PROD_TOKEN is missing"
+            exit 1
+          fi
+          echo "::add-mask::${PROD_TOKEN}"
+          echo "Protected authentication step completed"
+
+  open-issue-when-config-missing:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_issue_demo == 'true'
+    runs-on: ubuntu-latest
+    # The default GITHUB_TOKEN is restricted here to the minimum needed scope.
+    # issues: write allows this job to open an issue when REQUIRED_CONFIG is missing.
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Validate required repository variable
+        id: validate
+        run: |
+          if [ -z "${REQUIRED_CONFIG}" ]; then
+            echo "missing=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "missing=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Create issue using GITHUB_TOKEN
+        if: steps.validate.outputs.missing == 'true'
+        uses: actions/github-script@v7
+        with:
+          # The workflow uses the repository-scoped GITHUB_TOKEN generated for this run.
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'TP3 automation: REQUIRED_CONFIG is missing',
+              body: [
+                'This issue was opened automatically by the TP3 workflow.',
+                '',
+                'Condition met: repository variable REQUIRED_CONFIG is not configured.',
+                'Action: configure the variable and rerun the workflow.'
+              ].join('\n')
+            });
+
+      - name: Confirm issue branch
+        if: steps.validate.outputs.missing != 'true'
+        run: echo "REQUIRED_CONFIG is configured. No issue created."
+
+  deploy-dev:
+    if: github.ref == 'refs/heads/dev'
+    needs: build-test-package
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Simulated dev deploy
+        run: |
+          echo "Deploying to dev environment"
+          echo "APP_MODE=${{ vars.APP_MODE }}"
+          echo "DEV_API_URL=${{ vars.DEV_API_URL }}"
+
+  deploy-prod:
+    if: github.ref == 'refs/heads/main'
+    needs: build-test-package
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Validate prod secret presence
+        env:
+          PROD_DEPLOY_TOKEN: ${{ secrets.PROD_DEPLOY_TOKEN }}
+        run: |
+          if [ -z "${PROD_DEPLOY_TOKEN}" ]; then
+            echo "PROD_DEPLOY_TOKEN is missing"
+            exit 1
+          fi
+          echo "::add-mask::${PROD_DEPLOY_TOKEN}"
+          echo "Prod secret available"
+
+      - name: Simulated prod deploy
+        run: |
+          echo "Deploying to prod environment after approval"
+          echo "Support contact: ${{ vars.SUPPORT_EMAIL }}"

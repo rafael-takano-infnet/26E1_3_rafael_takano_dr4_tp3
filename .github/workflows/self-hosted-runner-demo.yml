@@ -1,0 +1,30 @@
+name: Self-Hosted Runner Demo
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose-runner:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show runner diagnostics
+        run: |
+          echo "Actor: ${{ github.actor }}"
+          echo "Runner OS: ${{ runner.os }}"
+          uname -a
+          java -version
+
+      - name: Install extra package on Linux runner
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tree
+          tree --version
+
+      - name: Check workspace files
+        run: |
+          pwd
+          ls -la
